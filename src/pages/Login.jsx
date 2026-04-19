@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Mail, Lock, Loader2 } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -12,6 +12,8 @@ const Login = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { login, oauthLogin } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const redirectPath = location.state?.from || '/restaurants';
 
   const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
 
@@ -21,7 +23,7 @@ const Login = () => {
     setError('');
     try {
       await login(formData.email, formData.password);
-      navigate('/dashboard');
+      navigate(redirectPath, { replace: true });
     } catch (err) {
       setError(err.response?.data?.message || err.response?.data?.errors?.join(', ') || 'Login failed. Please check your credentials.');
     } finally {
@@ -33,7 +35,7 @@ const Login = () => {
     try {
       const decoded = jwtDecode(credentialResponse.credential);
       await oauthLogin(decoded.email, decoded.name || 'User', 'GOOGLE', decoded.sub);
-      navigate('/dashboard');
+      navigate(redirectPath, { replace: true });
     } catch (err) {
       setError('Google login failed. Please try again.');
     }

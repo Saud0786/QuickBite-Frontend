@@ -8,13 +8,23 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  const normalizeUser = (rawUser) => {
+    if (!rawUser) return null;
+    return {
+      ...rawUser,
+      isActive: rawUser.isActive ?? rawUser.active ?? true,
+      profilePicUrl: rawUser.profilePicUrl ?? rawUser.profilePicURL ?? null,
+      provider: rawUser.provider || 'LOCAL'
+    };
+  };
+
   useEffect(() => {
     const initAuth = async () => {
       const token = localStorage.getItem('accessToken');
       if (token) {
         try {
           const res = await api.get('/auth/me');
-          setUser(res.data.data);
+          setUser(normalizeUser(res.data.data));
         } catch (err) {
           console.error('Failed to fetch user', err);
           setUser(null);
@@ -30,7 +40,7 @@ export const AuthProvider = ({ children }) => {
     const { accessToken, refreshToken, user: userData } = res.data.data;
     localStorage.setItem('accessToken', accessToken);
     localStorage.setItem('refreshToken', refreshToken);
-    setUser(userData);
+    setUser(normalizeUser(userData));
     toast.success('Successfully logged in!');
     return res.data;
   };
@@ -46,25 +56,37 @@ export const AuthProvider = ({ children }) => {
     const { accessToken, refreshToken, user: userData } = res.data.data;
     localStorage.setItem('accessToken', accessToken);
     localStorage.setItem('refreshToken', refreshToken);
-    setUser(userData);
+    setUser(normalizeUser(userData));
     toast.success(`Successfully logged in with ${provider}!`);
     return res.data;
   };
 
   const deactivateAccount = async () => {
-    await api.delete('/auth/deactivate');
-    toast.success('Your account has been deactivated.');
-    localStorage.removeItem('accessToken');
-    localStorage.removeItem('refreshToken');
-    setUser(null);
-    window.location.href = '/login';
+    try {
+      await api.delete('/auth/deactivate');
+      toast.success('Your account has been deactivated.');
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('refreshToken');
+      setUser(null);
+      window.location.href = '/login';
+    } catch (err) {
+      const message = err?.response?.data?.message || 'Failed to deactivate account.';
+      toast.error(message);
+      throw err;
+    }
   };
 
   const updateProfile = async (profileData) => {
-    const res = await api.put('/auth/profile', profileData);
-    setUser(res.data.data);
-    toast.success('Profile updated successfully!');
-    return res.data;
+    try {
+      const res = await api.put('/auth/profile', profileData);
+      setUser(normalizeUser(res.data.data));
+      toast.success('Profile updated successfully!');
+      return res.data;
+    } catch (err) {
+      const message = err?.response?.data?.message || 'Failed to update profile.';
+      toast.error(message);
+      throw err;
+    }
   };
 
   const changePassword = async (passwordData) => {

@@ -18,6 +18,14 @@ export default defineConfig({
       '/api/restaurants': {
         target: 'http://localhost:8082',
         changeOrigin: true,
+      },
+      '/api/menu': {
+        target: 'http://localhost:8083',
+        changeOrigin: true,
+      },
+      '/api/cart': {
+        target: 'http://localhost:8084',
+        changeOrigin: true,
       }
     }
   }

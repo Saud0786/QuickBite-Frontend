@@ -24,6 +24,10 @@ export const restaurantApi = {
     const res = await api.post('/restaurants', data);
     return res.data;
   },
+  updateRestaurant: async (id, data) => {
+    const res = await api.put(`/restaurants/${id}`, data);
+    return res.data;
+  },
   getMyRestaurants: async () => {
     const res = await api.get('/restaurants/my');
     return res.data;
