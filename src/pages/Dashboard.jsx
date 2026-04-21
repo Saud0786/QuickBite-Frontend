@@ -1,18 +1,19 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { LogOut, User, Mail, Phone, Settings, Shield, Trash2, AlertTriangle, Key, Edit, Loader2, Store, CheckCircle, XCircle, PlusCircle } from 'lucide-react';
+import { LogOut, User, Mail, Phone, Settings, Shield, Trash2, AlertTriangle, Key, Edit, Loader2, Store, CheckCircle, XCircle, PlusCircle, ClipboardList, Truck } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 import { restaurantApi } from '../api/restaurant.api';
 import { menuApi } from '../api/menu.api';
+import { deliveryApi } from '../api/delivery.api';
 import { formatINR } from '../utils/currency';
 
 const Dashboard = () => {
   const { user, logout, deactivateAccount, updateProfile, changePassword } = useAuth();
   const navigate = useNavigate();
   const [showConfirm, setShowConfirm] = useState(false);
-  const [activeTab, setActiveTab] = useState('overview'); // overview, edit, security, manage_owner, menu_owner, manage_admin
+  const [activeTab, setActiveTab] = useState('overview'); // overview, edit, security, manage_owner, delivery_agents, menu_owner, manage_admin
   
   // Edit Profile State
   const [profileData, setProfileData] = useState({ fullName: '', email: '', phone: '', profilePicUrl: '', profileImage: null });
@@ -44,6 +45,20 @@ const Dashboard = () => {
     minOrderAmount: 0, estimatedDeliveryMin: 30, image: null
   });
 
+  const [selectedDeliveryRestaurantId, setSelectedDeliveryRestaurantId] = useState('');
+  const [deliveryAgentForm, setDeliveryAgentForm] = useState({
+    userId: '',
+    fullName: '',
+    phone: '',
+    vehicleType: 'BIKE',
+    vehicleNumber: '',
+  });
+  const [isRegisteringDeliveryAgent, setIsRegisteringDeliveryAgent] = useState(false);
+  const [verifyingAgentId, setVerifyingAgentId] = useState(null);
+  const [togglingAgentId, setTogglingAgentId] = useState(null);
+  const [restaurantDeliveryAgents, setRestaurantDeliveryAgents] = useState([]);
+  const [isLoadingDeliveryAgents, setIsLoadingDeliveryAgents] = useState(false);
+
   const loadMyRestaurants = async () => {
     try {
       const res = await restaurantApi.getMyRestaurants();
@@ -68,10 +83,22 @@ const Dashboard = () => {
   const [editingItemId, setEditingItemId] = useState(null);
 
   const getApiErrorMessage = (error, fallbackMessage) => {
+    const validationData = error?.response?.data?.data;
+    if (validationData && typeof validationData === 'object') {
+      const firstValidationMessage = Object.values(validationData).find(Boolean);
+      if (firstValidationMessage) return firstValidationMessage;
+    }
+
     return error?.response?.data?.message
       || error?.response?.data?.error
       || error?.message
       || fallbackMessage;
+  };
+
+  const unwrapList = (payload) => {
+    if (Array.isArray(payload)) return payload;
+    if (Array.isArray(payload?.data)) return payload.data;
+    return [];
   };
 
   const loadMenuData = async (restId) => {
@@ -85,6 +112,12 @@ const Dashboard = () => {
   };
 
   React.useEffect(() => {
+    if (user?.role === 'OWNER' || user?.role === 'ADMIN') {
+      loadMyRestaurants();
+    }
+  }, [user?.role]);
+
+  React.useEffect(() => {
     if (activeTab === 'menu_owner' && myRestaurants.length > 0 && !selectedRestaurantForMenu) {
       const defaultId = myRestaurants[0].restaurantId;
       setSelectedRestaurantForMenu(defaultId);
@@ -95,6 +128,34 @@ const Dashboard = () => {
   React.useEffect(() => {
     if (selectedRestaurantForMenu) loadMenuData(selectedRestaurantForMenu);
   }, [selectedRestaurantForMenu]);
+
+  React.useEffect(() => {
+    if (myRestaurants.length > 0 && !selectedDeliveryRestaurantId) {
+      setSelectedDeliveryRestaurantId(String(myRestaurants[0].restaurantId));
+    }
+  }, [myRestaurants, selectedDeliveryRestaurantId]);
+
+  React.useEffect(() => {
+    if (!selectedDeliveryRestaurantId) {
+      setRestaurantDeliveryAgents([]);
+      return;
+    }
+
+    const loadRestaurantDeliveryAgents = async () => {
+      setIsLoadingDeliveryAgents(true);
+      try {
+        const response = await deliveryApi.getRestaurantAgents(selectedDeliveryRestaurantId);
+        setRestaurantDeliveryAgents(unwrapList(response));
+      } catch (error) {
+        setRestaurantDeliveryAgents([]);
+        toast.error(getApiErrorMessage(error, 'Failed to load delivery agents for this restaurant'));
+      } finally {
+        setIsLoadingDeliveryAgents(false);
+      }
+    };
+
+    loadRestaurantDeliveryAgents();
+  }, [selectedDeliveryRestaurantId]);
 
   const handleAddCategory = async (e) => {
     e.preventDefault();
@@ -302,6 +363,74 @@ const Dashboard = () => {
     } catch (e) { toast.error("Failed to toggle status"); }
   };
 
+  const handleRegisterDeliveryAgent = async (e) => {
+    e.preventDefault();
+
+    if (!selectedDeliveryRestaurantId) {
+      toast.error('Select a restaurant first.');
+      return;
+    }
+
+    if (!deliveryAgentForm.userId || !deliveryAgentForm.fullName.trim() || !deliveryAgentForm.phone.trim() || !deliveryAgentForm.vehicleType.trim() || !deliveryAgentForm.vehicleNumber.trim()) {
+      toast.error('Please fill in all delivery agent details.');
+      return;
+    }
+
+    const phone = deliveryAgentForm.phone.trim();
+    if (!/^[6-9]\d{9}$/.test(phone)) {
+      toast.error('Enter a valid 10-digit Indian mobile number.');
+      return;
+    }
+
+    setIsRegisteringDeliveryAgent(true);
+    try {
+      await deliveryApi.registerAgent({
+        restaurantId: Number(selectedDeliveryRestaurantId),
+        userId: Number(deliveryAgentForm.userId),
+        fullName: deliveryAgentForm.fullName.trim(),
+        phone,
+        vehicleType: deliveryAgentForm.vehicleType.trim(),
+        vehicleNumber: deliveryAgentForm.vehicleNumber.trim(),
+      });
+      toast.success('Delivery agent registered successfully.');
+      setDeliveryAgentForm({ userId: '', fullName: '', phone: '', vehicleType: 'BIKE', vehicleNumber: '' });
+      const response = await deliveryApi.getRestaurantAgents(selectedDeliveryRestaurantId);
+      setRestaurantDeliveryAgents(unwrapList(response));
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, 'Failed to register delivery agent.'));
+    } finally {
+      setIsRegisteringDeliveryAgent(false);
+    }
+  };
+
+  const handleVerifyDeliveryAgent = async (agentId) => {
+    setVerifyingAgentId(agentId);
+    try {
+      await deliveryApi.verifyAgent(agentId);
+      toast.success('Delivery agent verified successfully.');
+      const response = await deliveryApi.getRestaurantAgents(selectedDeliveryRestaurantId);
+      setRestaurantDeliveryAgents(unwrapList(response));
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, 'Failed to verify delivery agent.'));
+    } finally {
+      setVerifyingAgentId(null);
+    }
+  };
+
+  const handleToggleDeliveryAgentAvailability = async (agentId, available) => {
+    setTogglingAgentId(agentId);
+    try {
+      await deliveryApi.toggleAvailability(agentId, available);
+      toast.success(available ? 'Agent marked available.' : 'Agent marked offline.');
+      const response = await deliveryApi.getRestaurantAgents(selectedDeliveryRestaurantId);
+      setRestaurantDeliveryAgents(unwrapList(response));
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, 'Failed to update agent availability.'));
+    } finally {
+      setTogglingAgentId(null);
+    }
+  };
+
   const handleApprove = async (id) => {
     try {
       await restaurantApi.approveRestaurant(id);
@@ -390,6 +519,12 @@ const Dashboard = () => {
             >
               <Store className="w-4 h-4" /><span>Back to Restaurants</span>
             </button>
+            <button
+              onClick={() => navigate('/orders')}
+              className="flex items-center space-x-2 bg-white/5 hover:bg-cyan-500/20 text-gray-300 hover:text-cyan-300 px-4 py-2 rounded-xl border border-white/10 hover:border-cyan-500/30 transition-all font-medium text-sm"
+            >
+              <ClipboardList className="w-4 h-4" /><span>My Orders</span>
+            </button>
             <button onClick={() => setShowConfirm(true)} className="flex items-center space-x-2 bg-white/5 hover:bg-orange-500/20 text-gray-300 hover:text-orange-400 px-4 py-2 rounded-xl border border-white/10 hover:border-orange-500/30 transition-all font-medium text-sm">
               <Trash2 className="w-4 h-4" /><span>Deactivate</span>
             </button>
@@ -421,6 +556,9 @@ const Dashboard = () => {
               )}
               <button onClick={() => setActiveTab('menu_owner')} className={`px-4 py-2 rounded-lg font-medium transition-colors whitespace-nowrap ${activeTab === 'menu_owner' ? 'bg-primary text-white' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
                 <Store className="w-4 h-4 inline mr-2" />Manage Menu
+              </button>
+              <button onClick={() => setActiveTab('delivery_agents')} className={`px-4 py-2 rounded-lg font-medium transition-colors whitespace-nowrap ${activeTab === 'delivery_agents' ? 'bg-primary text-white' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
+                <Truck className="w-4 h-4 inline mr-2" />Delivery Agents
               </button>
             </>
           )}
@@ -543,126 +681,272 @@ const Dashboard = () => {
             </motion.div>
           )}
 
-          {activeTab === 'manage_owner' && user.role === 'OWNER' && (
+          {(activeTab === 'manage_owner' || activeTab === 'delivery_agents') && user.role === 'OWNER' && (
             <motion.div key="manage_owner" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-8">
               
-              {/* My Locations */}
-              <div className="glass p-6 rounded-2xl">
-                <div className="flex items-center space-x-3 mb-6 pb-6 border-b border-white/10">
-                  <Store className="text-accent w-6 h-6" />
-                  <h2 className="text-xl font-bold">My Registered Restaurants</h2>
-                </div>
-                {myRestaurants.length === 0 ? (
-                  <p className="text-gray-400">You have not registered any restaurants yet.</p>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {myRestaurants.map(r => (
-                      <div key={r.restaurantId} className="bg-white/5 p-4 rounded-xl border border-white/10 flex flex-col justify-between">
-                        <div>
-                          <div className="flex justify-between items-start mb-2">
-                            <h3 className="font-bold text-lg">{r.name}</h3>
-                            <span className={`px-2 py-1 text-xs font-bold rounded-full ${r.isApproved ? 'bg-emerald-500/20 text-emerald-400' : 'bg-orange-500/20 text-orange-400'}`}>
-                              {r.isApproved ? 'Approved' : 'Pending'}
-                            </span>
+              {activeTab === 'manage_owner' && (
+                <>
+                  {/* My Locations */}
+                  <div className="glass p-6 rounded-2xl">
+                    <div className="flex items-center space-x-3 mb-6 pb-6 border-b border-white/10">
+                      <Store className="text-accent w-6 h-6" />
+                      <h2 className="text-xl font-bold">My Registered Restaurants</h2>
+                    </div>
+                    {myRestaurants.length === 0 ? (
+                      <p className="text-gray-400">You have not registered any restaurants yet.</p>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {myRestaurants.map(r => (
+                          <div key={r.restaurantId} className="bg-white/5 p-4 rounded-xl border border-white/10 flex flex-col justify-between">
+                            <div>
+                              <div className="flex justify-between items-start mb-2">
+                                <h3 className="font-bold text-lg">{r.name}</h3>
+                                <span className={`px-2 py-1 text-xs font-bold rounded-full ${r.isApproved ? 'bg-emerald-500/20 text-emerald-400' : 'bg-orange-500/20 text-orange-400'}`}>
+                                  {r.isApproved ? 'Approved' : 'Pending'}
+                                </span>
+                              </div>
+                              <p className="text-sm text-gray-400 mb-4">{r.city} • {r.cuisine}</p>
+                              <p className="text-sm text-gray-400 mb-4">Minimum Order: {r.minOrderAmount > 0 ? formatINR(r.minOrderAmount) : 'Not set yet'}</p>
+                              <p className="text-sm text-gray-400 mb-4">Delivery Time: {r.estimatedDeliveryMin ? `${r.estimatedDeliveryMin} min` : 'Not set yet'}</p>
+                            </div>
+                            <div className="flex gap-2">
+                              <button onClick={() => handleEditRestaurant(r)} className="flex-1 py-2 rounded-lg font-semibold transition-colors bg-white/10 text-white hover:bg-white/15">
+                                Edit
+                              </button>
+                              {r.isApproved && (
+                                <button onClick={() => handleToggleOpen(r.restaurantId)} className={`flex-1 py-2 rounded-lg font-semibold transition-colors ${r.isOpen ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30' : 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30'}`}>
+                                  {r.isOpen ? 'Close Restaurant' : 'Open Restaurant'}
+                                </button>
+                              )}
+                            </div>
                           </div>
-                          <p className="text-sm text-gray-400 mb-4">{r.city} • {r.cuisine}</p>
-                          <p className="text-sm text-gray-400 mb-4">Minimum Order: {r.minOrderAmount > 0 ? formatINR(r.minOrderAmount) : 'Not set yet'}</p>
-                          <p className="text-sm text-gray-400 mb-4">Delivery Time: {r.estimatedDeliveryMin ? `${r.estimatedDeliveryMin} min` : 'Not set yet'}</p>
-                        </div>
-                        <div className="flex gap-2">
-                          <button onClick={() => handleEditRestaurant(r)} className="flex-1 py-2 rounded-lg font-semibold transition-colors bg-white/10 text-white hover:bg-white/15">
-                            Edit
-                          </button>
-                          {r.isApproved && (
-                            <button onClick={() => handleToggleOpen(r.restaurantId)} className={`flex-1 py-2 rounded-lg font-semibold transition-colors ${r.isOpen ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30' : 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30'}`}>
-                              {r.isOpen ? 'Close Restaurant' : 'Open Restaurant'}
-                            </button>
-                          )}
-                        </div>
+                        ))}
                       </div>
-                    ))}
+                    )}
                   </div>
-                )}
-              </div>
 
-              {/* Registration Form */}
-              <div className="glass p-6 rounded-2xl max-w-2xl" id="restaurant-form">
+                  {/* Registration Form */}
+                  <div className="glass p-6 rounded-2xl max-w-2xl" id="restaurant-form">
+                    <div className="flex items-center space-x-3 mb-6 pb-6 border-b border-white/10">
+                      <PlusCircle className="text-primary w-6 h-6" />
+                      <h2 className="text-xl font-bold">{editingRestaurantId ? 'Edit Restaurant' : 'Register New Location'}</h2>
+                    </div>
+                    <form onSubmit={handleRegisterRestaurant} className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                         <div>
+                           <label className="text-sm text-gray-400 mb-1 block">Name</label>
+                           <input required value={newRestaurant.name} onChange={e=>setNewRestaurant({...newRestaurant, name: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white" />
+                         </div>
+                         <div>
+                           <label className="text-sm text-gray-400 mb-1 block">Cuisine</label>
+                           <input required value={newRestaurant.cuisine} onChange={e=>setNewRestaurant({...newRestaurant, cuisine: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white" />
+                         </div>
+                      </div>
+                      <div>
+                        <label className="text-sm text-gray-400 mb-1 block">Description</label>
+                        <textarea required value={newRestaurant.description} onChange={e=>setNewRestaurant({...newRestaurant, description: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white" />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                         <div>
+                           <label className="text-sm text-gray-400 mb-1 block">City</label>
+                           <input required value={newRestaurant.city} onChange={e=>setNewRestaurant({...newRestaurant, city: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white" />
+                         </div>
+                         <div>
+                           <label className="text-sm text-gray-400 mb-1 block">Phone</label>
+                           <input required value={newRestaurant.phone} onChange={e=>setNewRestaurant({...newRestaurant, phone: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white" />
+                         </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                         <div>
+                           <label className="text-sm text-gray-400 mb-1 block">Address</label>
+                           <input required value={newRestaurant.address} onChange={e=>setNewRestaurant({...newRestaurant, address: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white" />
+                         </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                         <div>
+                           <label className="text-sm text-gray-400 mb-1 block">Minimum Order Amount (₹)</label>
+                           <input
+                             type="number"
+                             step="0.01"
+                             min="0"
+                             required
+                             value={newRestaurant.minOrderAmount}
+                             onChange={e=>setNewRestaurant({...newRestaurant, minOrderAmount: parseFloat(e.target.value) || 0})}
+                             className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white"
+                           />
+                         </div>
+                         <div>
+                           <label className="text-sm text-gray-400 mb-1 block">Estimated Delivery (min)</label>
+                           <input type="number" min="1" required value={newRestaurant.estimatedDeliveryMin} onChange={e=>setNewRestaurant({...newRestaurant, estimatedDeliveryMin: parseInt(e.target.value) || 30})} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white" />
+                         </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                         <div>
+                           <label className="text-sm text-gray-400 mb-1 block">Latitude</label>
+                           <input type="number" step="any" required value={newRestaurant.latitude} onChange={e=>setNewRestaurant({...newRestaurant, latitude: parseFloat(e.target.value) || 0})} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white" />
+                         </div>
+                         <div>
+                           <label className="text-sm text-gray-400 mb-1 block">Longitude</label>
+                           <input type="number" step="any" required value={newRestaurant.longitude} onChange={e=>setNewRestaurant({...newRestaurant, longitude: parseFloat(e.target.value) || 0})} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white" />
+                         </div>
+                      </div>
+                      <div>
+                        <label className="text-sm text-gray-400 mb-1 block">Restaurant Display Image</label>
+                        <input id="restaurantImageInput" type="file" accept="image/*" onChange={e=>setNewRestaurant({...newRestaurant, image: e.target.files[0]})} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary file:text-white hover:file:bg-cyan-600 transition-all cursor-pointer" />
+                      </div>
+                      <button type="submit" disabled={isActionLoading} className="w-full bg-primary hover:bg-primary/80 py-3 rounded-xl font-bold transition-all disabled:opacity-50">
+                        {isActionLoading ? 'Submitting...' : (editingRestaurantId ? 'Update Restaurant' : 'Submit for Approval')}
+                      </button>
+                      {editingRestaurantId && (
+                        <button type="button" onClick={resetRestaurantForm} className="w-full mt-2 bg-white/5 hover:bg-white/10 py-3 rounded-xl font-bold transition-all border border-white/10 text-gray-200">
+                          Cancel Edit
+                        </button>
+                      )}
+                    </form>
+                  </div>
+                </>
+              )}
+
+              <div className="glass p-6 rounded-2xl max-w-2xl">
                 <div className="flex items-center space-x-3 mb-6 pb-6 border-b border-white/10">
-                  <PlusCircle className="text-primary w-6 h-6" />
-                  <h2 className="text-xl font-bold">{editingRestaurantId ? 'Edit Restaurant' : 'Register New Location'}</h2>
+                  <Truck className="text-accent w-6 h-6" />
+                  <h2 className="text-xl font-bold">Register Delivery Agent</h2>
                 </div>
-                <form onSubmit={handleRegisterRestaurant} className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                     <div>
-                       <label className="text-sm text-gray-400 mb-1 block">Name</label>
-                       <input required value={newRestaurant.name} onChange={e=>setNewRestaurant({...newRestaurant, name: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white" />
-                     </div>
-                     <div>
-                       <label className="text-sm text-gray-400 mb-1 block">Cuisine</label>
-                       <input required value={newRestaurant.cuisine} onChange={e=>setNewRestaurant({...newRestaurant, cuisine: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white" />
-                     </div>
-                  </div>
+                <form onSubmit={handleRegisterDeliveryAgent} className="space-y-4">
                   <div>
-                    <label className="text-sm text-gray-400 mb-1 block">Description</label>
-                    <textarea required value={newRestaurant.description} onChange={e=>setNewRestaurant({...newRestaurant, description: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white" />
+                    <label className="text-sm text-gray-400 mb-1 block">Restaurant</label>
+                    <select
+                      value={selectedDeliveryRestaurantId}
+                      onChange={(event) => setSelectedDeliveryRestaurantId(event.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white"
+                    >
+                      <option value="" className="bg-gray-800 text-gray-400">Select restaurant</option>
+                      {myRestaurants.map((restaurant) => (
+                        <option key={restaurant.restaurantId} value={restaurant.restaurantId} className="bg-gray-800 text-white">
+                          {restaurant.name}
+                        </option>
+                      ))}
+                    </select>
                   </div>
+
                   <div className="grid grid-cols-2 gap-4">
-                     <div>
-                       <label className="text-sm text-gray-400 mb-1 block">City</label>
-                       <input required value={newRestaurant.city} onChange={e=>setNewRestaurant({...newRestaurant, city: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white" />
-                     </div>
-                     <div>
-                       <label className="text-sm text-gray-400 mb-1 block">Phone</label>
-                       <input required value={newRestaurant.phone} onChange={e=>setNewRestaurant({...newRestaurant, phone: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white" />
-                     </div>
+                    <div>
+                      <label className="text-sm text-gray-400 mb-1 block">User ID</label>
+                      <input
+                        type="number"
+                        min="1"
+                        required
+                        value={deliveryAgentForm.userId}
+                        onChange={(event) => setDeliveryAgentForm({ ...deliveryAgentForm, userId: event.target.value })}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm text-gray-400 mb-1 block">Full Name</label>
+                      <input
+                        required
+                        value={deliveryAgentForm.fullName}
+                        onChange={(event) => setDeliveryAgentForm({ ...deliveryAgentForm, fullName: event.target.value })}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white"
+                      />
+                    </div>
                   </div>
+
                   <div className="grid grid-cols-2 gap-4">
-                     <div>
-                       <label className="text-sm text-gray-400 mb-1 block">Address</label>
-                       <input required value={newRestaurant.address} onChange={e=>setNewRestaurant({...newRestaurant, address: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white" />
-                     </div>
+                    <div>
+                      <label className="text-sm text-gray-400 mb-1 block">Phone</label>
+                      <input
+                        required
+                        value={deliveryAgentForm.phone}
+                        onChange={(event) => setDeliveryAgentForm({ ...deliveryAgentForm, phone: event.target.value })}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm text-gray-400 mb-1 block">Vehicle Type</label>
+                      <select
+                        value={deliveryAgentForm.vehicleType}
+                        onChange={(event) => setDeliveryAgentForm({ ...deliveryAgentForm, vehicleType: event.target.value })}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white"
+                      >
+                        <option value="BIKE" className="bg-gray-800 text-white">BIKE</option>
+                        <option value="BICYCLE" className="bg-gray-800 text-white">BICYCLE</option>
+                        <option value="SCOOTER" className="bg-gray-800 text-white">SCOOTER</option>
+                        <option value="CAR" className="bg-gray-800 text-white">CAR</option>
+                      </select>
+                    </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
-                     <div>
-                       <label className="text-sm text-gray-400 mb-1 block">Minimum Order Amount (₹)</label>
-                       <input
-                         type="number"
-                         step="0.01"
-                         min="0"
-                         required
-                         value={newRestaurant.minOrderAmount}
-                         onChange={e=>setNewRestaurant({...newRestaurant, minOrderAmount: parseFloat(e.target.value) || 0})}
-                         className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white"
-                       />
-                     </div>
-                     <div>
-                       <label className="text-sm text-gray-400 mb-1 block">Estimated Delivery (min)</label>
-                       <input type="number" min="1" required value={newRestaurant.estimatedDeliveryMin} onChange={e=>setNewRestaurant({...newRestaurant, estimatedDeliveryMin: parseInt(e.target.value) || 30})} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white" />
-                     </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                     <div>
-                       <label className="text-sm text-gray-400 mb-1 block">Latitude</label>
-                       <input type="number" step="any" required value={newRestaurant.latitude} onChange={e=>setNewRestaurant({...newRestaurant, latitude: parseFloat(e.target.value) || 0})} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white" />
-                     </div>
-                     <div>
-                       <label className="text-sm text-gray-400 mb-1 block">Longitude</label>
-                       <input type="number" step="any" required value={newRestaurant.longitude} onChange={e=>setNewRestaurant({...newRestaurant, longitude: parseFloat(e.target.value) || 0})} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white" />
-                     </div>
-                  </div>
+
                   <div>
-                    <label className="text-sm text-gray-400 mb-1 block">Restaurant Display Image</label>
-                    <input id="restaurantImageInput" type="file" accept="image/*" onChange={e=>setNewRestaurant({...newRestaurant, image: e.target.files[0]})} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary file:text-white hover:file:bg-cyan-600 transition-all cursor-pointer" />
+                    <label className="text-sm text-gray-400 mb-1 block">Vehicle Number</label>
+                    <input
+                      required
+                      value={deliveryAgentForm.vehicleNumber}
+                      onChange={(event) => setDeliveryAgentForm({ ...deliveryAgentForm, vehicleNumber: event.target.value })}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white"
+                    />
                   </div>
-                  <button type="submit" disabled={isActionLoading} className="w-full bg-primary hover:bg-primary/80 py-3 rounded-xl font-bold transition-all disabled:opacity-50">
-                    {isActionLoading ? 'Submitting...' : (editingRestaurantId ? 'Update Restaurant' : 'Submit for Approval')}
+
+                  <button type="submit" disabled={isRegisteringDeliveryAgent || myRestaurants.length === 0} className="w-full bg-accent hover:bg-cyan-600 py-3 rounded-xl font-bold transition-all disabled:opacity-50">
+                    {isRegisteringDeliveryAgent ? 'Registering...' : 'Register Agent'}
                   </button>
-                  {editingRestaurantId && (
-                    <button type="button" onClick={resetRestaurantForm} className="w-full mt-2 bg-white/5 hover:bg-white/10 py-3 rounded-xl font-bold transition-all border border-white/10 text-gray-200">
-                      Cancel Edit
-                    </button>
-                  )}
                 </form>
+
+                <div className="mt-6 border-t border-white/10 pt-6">
+                  <div className="flex items-center justify-between gap-3 mb-4">
+                    <h3 className="font-semibold text-lg">Registered Agents</h3>
+                    {isLoadingDeliveryAgents && <Loader2 className="w-4 h-4 animate-spin text-gray-400" />}
+                  </div>
+                  {restaurantDeliveryAgents.length === 0 ? (
+                    <p className="text-sm text-gray-400">No delivery agents registered for this restaurant yet.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {restaurantDeliveryAgents.map((agent) => (
+                        <div key={agent.agentId} className="rounded-xl border border-white/10 bg-white/5 p-4">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="font-semibold">{agent.fullName}</p>
+                              <p className="text-sm text-gray-400">#{agent.agentId} • {agent.vehicleType} • {agent.vehicleNumber}</p>
+                              <p className="text-sm text-gray-400">{agent.phone}</p>
+                            </div>
+                            <div className="flex flex-col items-end gap-2 text-xs font-semibold">
+                              <span className={`px-2 py-1 rounded-full ${agent.isVerified ? 'bg-emerald-500/20 text-emerald-300' : 'bg-orange-500/20 text-orange-300'}`}>
+                                {agent.isVerified ? 'Verified' : 'Pending'}
+                              </span>
+                              <span className={`px-2 py-1 rounded-full ${agent.isAvailable ? 'bg-cyan-500/20 text-cyan-300' : 'bg-white/10 text-gray-300'}`}>
+                                {agent.isAvailable ? 'Available' : 'Busy / Offline'}
+                              </span>
+                              {agent.isVerified && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleDeliveryAgentAvailability(agent.agentId, !agent.isAvailable)}
+                                  disabled={togglingAgentId === agent.agentId}
+                                  className={`mt-1 px-3 py-1 rounded-full transition-all disabled:opacity-50 ${agent.isAvailable ? 'bg-white/10 text-gray-200 hover:bg-white/15' : 'bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/30'}`}
+                                >
+                                  {togglingAgentId === agent.agentId
+                                    ? 'Updating...'
+                                    : agent.isAvailable
+                                      ? 'Mark Offline'
+                                      : 'Mark Available'}
+                                </button>
+                              )}
+                              {!agent.isVerified && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleVerifyDeliveryAgent(agent.agentId)}
+                                  disabled={verifyingAgentId === agent.agentId}
+                                  className="mt-1 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 disabled:opacity-50"
+                                >
+                                  {verifyingAgentId === agent.agentId ? 'Verifying...' : 'Accept Agent'}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </motion.div>
           )}
@@ -778,10 +1062,12 @@ const Dashboard = () => {
                     </form>
                     
                     <div className="space-y-3">
-                      {menuItems.map(m => (
+                      {menuItems.map(m => {
+                        const imageUrl = m.imageUrl || m.image_url || m.image;
+                        return (
                         <div key={m.itemId} className="flex gap-3 items-start bg-white/5 p-3 rounded-lg border border-white/10">
-                          {m.imageUrl ? (
-                            <img src={m.imageUrl} alt={m.name} className="w-16 h-16 rounded-xl object-cover border border-white/10 flex-shrink-0" />
+                          {imageUrl ? (
+                            <img src={imageUrl} alt={m.name} className="w-16 h-16 rounded-xl object-cover border border-white/10 flex-shrink-0" />
                           ) : (
                             <div className="w-16 h-16 rounded-xl bg-white/5 border border-dashed border-white/10 flex items-center justify-center text-gray-500 text-xs flex-shrink-0">No image</div>
                           )}
@@ -812,7 +1098,7 @@ const Dashboard = () => {
                             </div>
                           </div>
                         </div>
-                      ))}
+                      )})}
                     </div>
                   </div>
                 </div>

@@ -26,6 +26,22 @@ export default defineConfig({
       '/api/cart': {
         target: 'http://localhost:8084',
         changeOrigin: true,
+      },
+      '/api/orders': {
+        target: 'http://localhost:8085',
+        changeOrigin: true,
+      },
+      '/api/payments': {
+        target: 'http://localhost:8086',
+        changeOrigin: true,
+      },
+      '/api/wallet': {
+        target: 'http://localhost:8086',
+        changeOrigin: true,
+      },
+      '/api/agents': {
+        target: 'http://localhost:8087',
+        changeOrigin: true,
       }
     }
   }

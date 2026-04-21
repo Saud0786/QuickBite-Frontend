@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, ShoppingBag, Trash2, Plus, Minus, Tag, ChevronRight, Loader2 } from 'lucide-react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
 import { formatINR } from '../utils/currency';
 
@@ -19,6 +19,7 @@ const CartDrawer = () => {
     applyPromo,
   } = useCart();
   const location = useLocation();
+  const navigate = useNavigate();
 
   const [promoCode, setPromoCode] = useState('');
   const [promoLoading, setPromoLoading] = useState(false);
@@ -230,7 +231,10 @@ const CartDrawer = () => {
                 </div>
 
                 {/* Checkout CTA */}
-                <button className="w-full flex items-center justify-between bg-primary hover:bg-cyan-500 text-[#050505] font-black py-4 px-6 rounded-2xl transition-all shadow-lg shadow-primary/20 group">
+                <button
+                  onClick={() => navigate('/checkout')}
+                  className="w-full flex items-center justify-between bg-primary hover:bg-cyan-500 text-[#050505] font-black py-4 px-6 rounded-2xl transition-all shadow-lg shadow-primary/20 group"
+                >
                   <span>Proceed to Checkout</span>
                   <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                 </button>

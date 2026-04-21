@@ -9,6 +9,9 @@ import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import Restaurants from './pages/Restaurants';
 import RestaurantDetails from './pages/RestaurantDetails';
+import Checkout from './pages/Checkout';
+import PayOrder from './pages/PayOrder';
+import Orders from './pages/Orders';
 import CartDrawer from './components/CartDrawer';
 import { Loader2 } from 'lucide-react';
 
@@ -47,6 +50,30 @@ const App = () => {
               <Route path="/register" element={<Register />} />
               <Route path="/restaurants" element={<Restaurants />} />
               <Route path="/restaurant/:id" element={<RestaurantDetails />} />
+              <Route
+                path="/checkout"
+                element={
+                  <ProtectedRoute>
+                    <Checkout />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/pay"
+                element={
+                  <ProtectedRoute>
+                    <PayOrder />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/orders"
+                element={
+                  <ProtectedRoute>
+                    <Orders />
+                  </ProtectedRoute>
+                }
+              />
               <Route
                 path="/dashboard"
                 element={

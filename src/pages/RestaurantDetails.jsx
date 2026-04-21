@@ -3,7 +3,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { restaurantApi } from '../api/restaurant.api';
 import { menuApi } from '../api/menu.api';
 import toast from 'react-hot-toast';
-import { ChevronLeft, Star, Clock, ShoppingBag, Info, Plus, Minus } from 'lucide-react';
+import { ChevronLeft, Star, Clock, ShoppingBag, Info, Plus, Minus, ClipboardList } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
 import CartButton from '../components/CartButton';
@@ -137,7 +137,15 @@ const RestaurantDetails = () => {
           >
             <ChevronLeft className="w-6 h-6 text-white" />
           </button>
-          <CartButton />
+          <div className="flex items-center gap-3">
+            {user && (
+              <button onClick={() => navigate('/orders')} className="flex items-center gap-2 bg-white/5 hover:bg-white/10 text-white px-4 py-2.5 rounded-xl border border-white/10 transition-all font-medium text-sm">
+                <ClipboardList className="w-4 h-4" />
+                <span className="hidden sm:inline">Orders</span>
+              </button>
+            )}
+            <CartButton />
+          </div>
         </div>
 
         {/* Restaurant Header Info */}

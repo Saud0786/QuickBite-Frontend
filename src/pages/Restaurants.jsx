@@ -3,7 +3,7 @@ import { restaurantApi } from '../api/restaurant.api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import { Link, useNavigate } from 'react-router-dom';
-import { Search, Utensils, User, LogIn, ChevronRight, Star, Clock, ShoppingBag } from 'lucide-react';
+import { Search, Utensils, User, LogIn, ChevronRight, Star, Clock, ShoppingBag, ClipboardList } from 'lucide-react';
 import CartButton from '../components/CartButton';
 import { formatINR } from '../utils/currency';
 
@@ -64,6 +64,9 @@ const Restaurants = () => {
            {user ? (
              <div className="flex items-center space-x-3">
                <CartButton />
+               <button onClick={() => navigate('/orders')} className="flex items-center space-x-2 bg-white/5 hover:bg-white/10 text-white px-5 py-2.5 rounded-xl border border-white/10 transition-all font-medium text-sm">
+                 <ClipboardList className="w-4 h-4" /><span>Orders</span>
+               </button>
                <button onClick={() => navigate('/dashboard')} className="flex items-center space-x-2 bg-white/5 hover:bg-white/10 text-white px-5 py-2.5 rounded-xl border border-white/10 transition-all font-medium text-sm">
                  <User className="w-4 h-4" /><span>Dashboard</span>
                </button>

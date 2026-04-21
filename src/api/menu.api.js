@@ -5,6 +5,10 @@ export const menuApi = {
     const res = await api.get(`/menu/restaurant/${restaurantId}/items`);
     return res.data;
   },
+  getItemById: async (itemId) => {
+    const res = await api.get(`/menu/item/${itemId}`);
+    return res.data;
+  },
   getCategoriesByRestaurant: async (restaurantId) => {
     const res = await api.get(`/menu/restaurant/${restaurantId}/categories`);
     return res.data;
